@@ -2,6 +2,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:qr_code_scanner/qr_code_scanner.dart';
+import './home.dart';
+import '../utils/secure_storage.dart';
+import '../utils/shared_preferences.dart';
+import '../entities/item_data.dart';
 
 class Result extends StatefulWidget {
   Barcode url;
@@ -12,6 +16,7 @@ class Result extends StatefulWidget {
 }
 
 class _ResultState extends State<Result> {
+  bool loadedList = true;
   @override
   void initState() {
     super.initState();// I don't know why, there's no output in this line.
@@ -20,29 +25,44 @@ class _ResultState extends State<Result> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text("Resultado"),
-      ),
-      body: Container(
-        child: FutureBuilder(
-          future: postRequest(widget.url.code),
-          builder: (context, snapshot) {
-            if (snapshot.data == null) {
-              return Container(
-                child: Center(
-                  child: Text('Carregando...'),
+      body: Center(
+        child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                  height: 400,
+                  child: FutureBuilder(
+                      future: postRequest(widget.url.code),
+                      builder: (context, snapshot) {
+                        if (snapshot.data == null) {
+                          return Container(
+                              child: Center(
+                                child: Text('Carregando...'),
+                              )
+                          );
+                        } else
+                          return ListView.builder(
+                              itemCount: snapshot.data.length,
+                              itemBuilder: (context, i) {
+                                return ListTile(
+                                  title:  Text(snapshot.data[i].descricao),
+                                  subtitle: Text(snapshot.data[i].data),
+                                );
+                              });
+                      }
+                  )
+              ),
+              if (loadedList)
+                ElevatedButton(
+                  child: Text('OK'),
+                  onPressed: () => {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => Home()),
+                    )
+                  },
                 )
-              );
-            } else
-              return ListView.builder(
-                itemCount: snapshot.data.length,
-                itemBuilder: (context, i) {
-                  return ListTile(
-                    title:  Text(snapshot.data[i].descricao),
-                    subtitle: Text(snapshot.data[i].data),
-                  );
-                });
-          }
+            ]
         )
       )
     );
@@ -50,10 +70,12 @@ class _ResultState extends State<Result> {
 }
 
 Future postRequest(String? url) async {
-  // todo - fix baseUrl
+  final email = await UserSecureStorage.getUserEmail() ?? '';
+
   var urlApi = "https://api-anotai.herokuapp.com/anotai";
   var body = json.encode({
-    'url': url
+    'url': url,
+    'email': email
   });
 
   var response = await http.post(
@@ -68,17 +90,34 @@ Future postRequest(String? url) async {
 
   var responseDecoded = json.decode(response.body);
 
-  List<NoteData> notes = [];
+  List<ItemData> note = [];
   for (var u in responseDecoded) {
-    NoteData note = NoteData(u[2], u[1]);
-    notes.add(note);
+    ItemData item = ItemData(descricao: u[2], data: u[1]);
+    note.add(item);
   }
-  return notes;
+  saveNote(note);
+
+  return note;
 }
 
-class NoteData {
-  final String descricao;
-  final String data;
+void saveNote(List<ItemData> note) async {
+  List notesData = [];
+  String notes = UserPreferences.getUserNotes() ?? '';
 
-  NoteData(this.descricao, this.data);
+  if(notes != ''){
+    List notesList = jsonDecode(notes);
+    for (var note in notesList) {
+      List<ItemData> itemsList = [];
+      for (var item in note) {
+        itemsList.add(ItemData().fromJson(item));
+      }
+      notesData.add(itemsList.map((e) => e.toJson()).toList());
+    }
+  }
+  notesData.add(note.map((e) => e.toJson()).toList());
+
+  String noteEncoded = jsonEncode(notesData);
+  print('Encoded note: $noteEncoded');
+
+  await UserPreferences.setUserNotes(noteEncoded);
 }
